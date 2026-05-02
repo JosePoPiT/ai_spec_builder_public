@@ -1,0 +1,37 @@
+#!/bin/sh
+
+# ── 1. Sensitive data check ───────────────────────────────────────────────────
+
+echo "Checking for sensitive data..."
+
+# Block any .env file from being staged (except .env.example)
+staged_env=$(git diff --cached --name-only | grep -E "^\.env" | grep -v "\.env\.example$" || true)
+if [ -n "$staged_env" ]; then
+  echo ""
+  echo "BLOCKED: .env file detected in staged files:"
+  echo "$staged_env"
+  echo "Remove it with: git restore --staged <file>"
+  echo ""
+  exit 1
+fi
+
+# Check staged diff content for secret patterns
+# Excludes .husky/ to avoid false positives from the hook script itself
+secrets=$(git diff --cached -- ':!.husky' | grep "^+" | grep -iE \
+  "ANTHROPIC_API_KEY\s*=|sk-ant-api[0-9a-zA-Z-]+|-----BEGIN (RSA|EC|DSA|OPENSSH) PRIVATE KEY-----|AWS_SECRET_ACCESS_KEY\s*=|AKIA[0-9A-Z]{16}|DATABASE_URL\s*=.*postgresql://|mongodb\+srv://[^:]+:[^@]+@|CLERK_SECRET_KEY\s*=" \
+  || true)
+
+if [ -n "$secrets" ]; then
+  echo ""
+  echo "BLOCKED: Possible sensitive data found in staged changes:"
+  echo "$secrets"
+  echo ""
+  exit 1
+fi
+
+echo "No sensitive data detected."
+echo ""
+
+# ── 2. Lint staged files ──────────────────────────────────────────────────────
+
+npx lint-staged
