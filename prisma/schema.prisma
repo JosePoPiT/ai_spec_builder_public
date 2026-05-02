@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  name      String?
+  plan      Plan      @default(FREE)
+  projects  Project[]
+  createdAt DateTime  @default(now())
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String   @db.Text
+  answers     Json?
+  spec        Spec?
+  status      Status   @default(DRAFT)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Spec {
+  id           String   @id @default(cuid())
+  projectId    String   @unique
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  vision       String   @db.Text
+  features     Json
+  architecture String   @db.Text
+  timeline     Json?
+  glossary     Json?
+  version      Int      @default(1)
+  createdAt    DateTime @default(now())
+}
+
+enum Plan {
+  FREE
+  PRO
+}
+
+enum Status {
+  DRAFT
+  GENERATING
+  COMPLETE
+  SHARED
+}
