@@ -4,19 +4,21 @@ import type { NextRequest } from 'next/server';
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const rateLimit = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT_MAX = 10;
-const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
-function checkRateLimit(ip: string): boolean {
+function checkRateLimit(ip: string): { allowed: boolean; retryAfterMs: number } {
   const now = Date.now();
   const record = rateLimit.get(ip);
   if (!record || now > record.resetAt) {
     rateLimit.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
+    return { allowed: true, retryAfterMs: 0 };
   }
-  if (record.count >= RATE_LIMIT_MAX) return false;
+  if (record.count >= RATE_LIMIT_MAX) {
+    return { allowed: false, retryAfterMs: record.resetAt - now };
+  }
   record.count++;
-  return true;
+  return { allowed: true, retryAfterMs: 0 };
 }
 
 const SYSTEM_PROMPT = `You are an expert software architect. Given a project description, generate a comprehensive technical specification.
@@ -58,10 +60,12 @@ export async function POST(request: NextRequest) {
     request.headers.get('x-real-ip') ??
     'unknown';
 
-  if (!checkRateLimit(ip)) {
+  const { allowed, retryAfterMs } = checkRateLimit(ip);
+  if (!allowed) {
+    const retryAfterSecs = Math.ceil(retryAfterMs / 1000);
     return Response.json(
-      { error: 'Demasiadas solicitudes. Espera unos minutos antes de intentarlo de nuevo.' },
-      { status: 429 }
+      { error: `Límite de ${RATE_LIMIT_MAX} generaciones por minuto alcanzado.`, retryAfterMs },
+      { status: 429, headers: { 'Retry-After': String(retryAfterSecs) } }
     );
   }
 

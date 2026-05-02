@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { type Spec, isValidSpec } from '@/lib/types';
 
 const MIN_LENGTH = 20;
@@ -20,6 +20,21 @@ export default function SpecForm({
 }: SpecFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) {
+          setError(null);
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [countdown]);
 
   function setLoadingState(val: boolean) {
     setLoading(val);
@@ -40,6 +55,13 @@ export default function SpecForm({
 
       const data = await res.json();
 
+      if (res.status === 429) {
+        const secs = Math.ceil((data.retryAfterMs ?? 60000) / 1000);
+        setCountdown(secs);
+        setError(`Límite de generaciones por minuto alcanzado.`);
+        return;
+      }
+
       if (!res.ok) {
         setError(data.error ?? 'Error desconocido. Intenta de nuevo.');
         return;
@@ -59,7 +81,8 @@ export default function SpecForm({
   }
 
   const isShort = description.trim().length < MIN_LENGTH;
-  const canSubmit = !loading && !isShort;
+  const isRateLimited = countdown > 0;
+  const canSubmit = !loading && !isShort && !isRateLimited;
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full flex-col gap-3">
@@ -95,15 +118,26 @@ export default function SpecForm({
             <SpinnerIcon />
             Generando...
           </>
+        ) : isRateLimited ? (
+          <>
+            <ClockIcon />
+            Espera {countdown}s
+          </>
         ) : (
           'Generar especificación'
         )}
       </button>
 
       {error && (
-        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-          {error}
-        </p>
+        <div role="alert" className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950">
+          <span className="mt-0.5 text-amber-500">⚠</span>
+          <div className="text-sm text-amber-700 dark:text-amber-300">
+            <span>{error}</span>
+            {isRateLimited && (
+              <span className="ml-1 font-medium">Puedes intentarlo de nuevo en {countdown}s.</span>
+            )}
+          </div>
+        </div>
       )}
     </form>
   );
@@ -114,6 +148,15 @@ function SpinnerIcon() {
     <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
